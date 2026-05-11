@@ -133,6 +133,15 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 
 @keyframes countup{from{opacity:.4;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
 .num-pop{animation:countup .3s ease-out}
+
+@keyframes tiSlideIn{from{opacity:0;max-height:0;transform:translateY(-6px)}to{opacity:1;max-height:80px;transform:translateY(0)}}
+@keyframes tiSlideOut{from{opacity:1;max-height:80px;padding-top:12px;padding-bottom:12px}to{opacity:0;max-height:0;padding-top:0;padding-bottom:0}}
+@keyframes tiComplete{0%{transform:translateX(0)}30%{transform:translateX(6px)}100%{transform:translateX(0);opacity:.6}}
+.ti{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:.5px solid #222;overflow:hidden}
+.ti:last-child{border-bottom:none}
+.ti.ti-enter{animation:tiSlideIn .25s ease-out forwards}
+.ti.ti-exit{animation:tiSlideOut .25s ease-in forwards;pointer-events:none}
+.ti.ti-complete{animation:tiComplete .3s ease-out forwards}
 </style>
 </head>
 <body>
@@ -194,6 +203,12 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
       <div class="undo-bar" id="undo-bar">
         <span id="undo-label">Added 0 ml</span>
         <button class="undo-btn" onclick="undoWater()">Undo</button>
+      </div>
+      <div style="margin-top:12px;border-top:.5px solid #222;padding-top:10px">
+        <button id="water-history-btn" onclick="toggleWaterHistory()" style="background:none;border:none;color:#555;font-size:12px;cursor:pointer;font-family:inherit;padding:0">Show history</button>
+        <div id="water-history-panel" style="max-height:0;opacity:0;overflow:hidden;transition:max-height .3s ease,opacity .3s ease;margin-top:8px">
+          <div id="water-history-bars"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -257,11 +272,11 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
   <div class="sec" id="todos">
     <div class="card">
       <div class="card-title">Tasks</div>
-      <div id="todo-list"><div class="empty-state"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1.2" fill="white"/><circle cx="3" cy="12" r="1.2" fill="white"/><circle cx="3" cy="18" r="1.2" fill="white"/></svg><p>No tasks yet</p><small>Type below and hit + to add one</small></div></div>
-      <div class="add-todo">
+      <div class="add-todo" style="margin-top:0;margin-bottom:12px">
         <input class="fi" id="new-todo" placeholder="Add a task…" onkeydown="if(event.key==='Enter')addTodo()">
         <button class="add-btn" onclick="addTodo()">+</button>
       </div>
+      <div id="todo-list"><div class="empty-state"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1.2" fill="white"/><circle cx="3" cy="12" r="1.2" fill="white"/><circle cx="3" cy="18" r="1.2" fill="white"/></svg><p>No tasks yet</p><small>Type above and hit + to add one</small></div></div>
     </div>
   </div>
 
@@ -365,7 +380,7 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 <script>
 const STORE = 'dashboard_v2';
 const DAY_MS = 86400000;
-let S = {workouts:[],sleep:[],health:[],todos:[],water:{date:'',ml:0},waterGoal:3000};
+let S = {workouts:[],sleep:[],health:[],todos:[],water:{date:'',ml:0},waterGoal:3000,waterHistory:[]};
 let activeM = null;
 let charts = {};
 let lastWaterAdd = 0;
@@ -575,42 +590,105 @@ function addTodo() {
   const inp = document.getElementById('new-todo');
   const txt = inp.value.trim();
   if (!txt) return;
-  S.todos.push({text:txt, done:false, id:Date.now()});
+  const newTodo = {text:txt, done:false, id:Date.now()};
+  S.todos.unshift(newTodo); // add to top of open tasks
   inp.value = '';
   saveData();
-  renderTodos();
   updateOverview();
+
+  // Animate in the new item without full re-render
+  const el = document.getElementById('todo-list');
+  // If empty state showing, replace with real list first
+  if (el.querySelector('.empty-state')) {
+    renderTodos();
+    return;
+  }
+  const div = document.createElement('div');
+  div.className = 'ti ti-enter';
+  div.dataset.id = newTodo.id;
+  div.innerHTML = todoHTML(newTodo);
+  el.insertBefore(div, el.firstChild);
+  haptic('light');
 }
 
 function toggleTodo(id) {
   const t = S.todos.find(x => x.id === id);
-  if (t) t.done = !t.done;
-  haptic(t && t.done ? 'medium' : 'light');
-  saveData();
-  renderTodos();
-  updateOverview();
+  if (!t) return;
+  const el = document.querySelector(`.ti[data-id="${id}"]`);
+
+  if (!t.done) {
+    // Completing — animate out then move to bottom
+    t.done = true;
+    haptic('medium');
+    if (el) {
+      el.classList.add('ti-complete');
+      setTimeout(() => {
+        el.classList.remove('ti-complete');
+        el.classList.add('ti-exit');
+        setTimeout(() => {
+          saveData();
+          renderTodos();
+          updateOverview();
+        }, 240);
+      }, 300);
+    } else {
+      saveData(); renderTodos(); updateOverview();
+    }
+  } else {
+    // Uncompleting — snap back up
+    t.done = false;
+    haptic('light');
+    if (el) {
+      el.classList.add('ti-exit');
+      setTimeout(() => {
+        saveData();
+        renderTodos();
+        updateOverview();
+      }, 240);
+    } else {
+      saveData(); renderTodos(); updateOverview();
+    }
+  }
 }
 
 function delTodo(id) {
-  S.todos = S.todos.filter(x => x.id !== id);
-  saveData();
-  renderTodos();
-  updateOverview();
+  const el = document.querySelector(`.ti[data-id="${id}"]`);
+  if (el) {
+    el.classList.add('ti-exit');
+    setTimeout(() => {
+      S.todos = S.todos.filter(x => x.id !== id);
+      saveData();
+      renderTodos();
+      updateOverview();
+    }, 240);
+  } else {
+    S.todos = S.todos.filter(x => x.id !== id);
+    saveData();
+    renderTodos();
+    updateOverview();
+  }
+}
+
+function todoHTML(t) {
+  return `
+    <div class="tck ${t.done?'done':''}" onclick="toggleTodo(${t.id})">
+      ${t.done ? `<svg width="12" height="12" viewBox="0 0 12 12" style="display:block;margin:auto"><path d="M2 6.5L4.8 9L10 3.5" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>` : ''}
+    </div>
+    <span class="ttxt ${t.done?'done':''}">${t.text}</span>
+    <span class="tdel" onclick="delTodo(${t.id})">×</span>`;
 }
 
 function renderTodos() {
   const el = document.getElementById('todo-list');
-  if (!S.todos.length) { el.innerHTML = '<div class="empty-state"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1.2" fill="white"/><circle cx="3" cy="12" r="1.2" fill="white"/><circle cx="3" cy="18" r="1.2" fill="white"/></svg><p>No tasks yet</p><small>Type below and hit + to add one</small></div>'; return; }
+  if (!S.todos.length) {
+    el.innerHTML = '<div class="empty-state"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1.2" fill="white"/><circle cx="3" cy="12" r="1.2" fill="white"/><circle cx="3" cy="18" r="1.2" fill="white"/></svg><p>No tasks yet</p><small>Type above and hit + to add one</small></div>';
+    return;
+  }
   const open = S.todos.filter(t => !t.done);
   const done = S.todos.filter(t => t.done);
-  el.innerHTML = [...open, ...done].map(t => `
-    <div class="ti">
-      <div class="tck ${t.done?'done':''}" onclick="toggleTodo(${t.id})">
-        ${t.done ? `<svg width="12" height="12" viewBox="0 0 12 12" style="display:block;margin:auto"><path d="M2 6.5L4.8 9L10 3.5" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>` : ''}
-      </div>
-      <span class="ttxt ${t.done?'done':''}">${t.text}</span>
-      <span class="tdel" onclick="delTodo(${t.id})">×</span>
-    </div>`).join('');
+  el.innerHTML = [...open, ...done].map(t =>
+    `<div class="ti" data-id="${t.id}">${todoHTML(t)}</div>`
+  ).join('');
 }
 
 function getStreakData() {
@@ -648,7 +726,9 @@ function renderStreakGrid() {
 }
 
 function updateOverview() {
-  const lh = S.health.length ? S.health[S.health.length - 1] : null;
+  const dk = todayKey();
+  const todayHealth = S.health.find(h => h.date === dk);
+  const lh = todayHealth || null;
   const ls = S.sleep.length ? S.sleep[S.sleep.length - 1] : null;
 
   const stepsEl = document.getElementById('ov-steps');
@@ -804,10 +884,37 @@ function updateCharts() {
   });
 }
 
+function checkDailyReset() {
+  const dk = todayKey();
+  // Reset water if it's a new day
+  if (S.water && S.water.date && S.water.date !== dk) {
+    // Save yesterday's water to history before resetting
+    if (S.water.ml > 0) {
+      if (!S.waterHistory) S.waterHistory = [];
+      S.waterHistory = S.waterHistory.filter(h => h.date !== S.water.date);
+      S.waterHistory.push({date: S.water.date, ml: S.water.ml});
+      S.waterHistory = S.waterHistory.slice(-30); // keep 30 days
+    }
+    S.water = {date: dk, ml: 0};
+    saveData();
+  }
+  // Reset steps display — steps come from health entries per day so they
+  // already reset naturally, but if manually entered on a prev day, show 0
+}
+
 function addWater(ml) {
   const dk = todayKey();
   if (!S.water) S.water = {date:'', ml:0};
-  if (S.water.date !== dk) { S.water = {date:dk, ml:0}; }
+  if (S.water.date !== dk) {
+    // New day — archive old entry first
+    if (S.water.ml > 0) {
+      if (!S.waterHistory) S.waterHistory = [];
+      S.waterHistory = S.waterHistory.filter(h => h.date !== S.water.date);
+      S.waterHistory.push({date: S.water.date, ml: S.water.ml});
+      S.waterHistory = S.waterHistory.slice(-30);
+    }
+    S.water = {date:dk, ml:0};
+  }
   lastWaterAdd = ml;
   S.water.ml += ml;
   saveData();
@@ -844,6 +951,7 @@ function resetWater() {
 
 function renderWater() {
   if (!S.water) S.water = {date:'', ml:0};
+  checkDailyReset();
   const dk = todayKey();
   const ml = S.water.date === dk ? S.water.ml : 0;
   const goal = S.waterGoal || 3000;
@@ -858,6 +966,53 @@ function renderWater() {
   if (arc) {
     arc.style.strokeDashoffset = offset.toFixed(1);
     arc.style.stroke = pct >= 1 ? '#50c878' : '#378add';
+  }
+  renderWaterHistory();
+}
+
+function renderWaterHistory() {
+  const el = document.getElementById('water-history-bars');
+  if (!el) return;
+  const hist = S.waterHistory || [];
+  if (!hist.length) {
+    el.innerHTML = '<p style="font-size:12px;color:#333;padding:4px 0">No history yet — data builds up daily</p>';
+    return;
+  }
+  const last7 = Array.from({length:7}, (_,i) => {
+    const d = new Date(); d.setDate(d.getDate() - (6-i));
+    return d.toISOString().slice(0,10);
+  });
+  const goal = S.waterGoal || 3000;
+  const map = {};
+  hist.forEach(h => map[h.date] = h.ml);
+  // also include today
+  const dk = todayKey();
+  if (S.water && S.water.date === dk) map[dk] = S.water.ml;
+  el.innerHTML = last7.map(d => {
+    const ml = map[d] || 0;
+    const pct = Math.min(100, Math.round((ml / goal) * 100));
+    const col = pct >= 100 ? '#50c878' : pct >= 60 ? '#378add' : pct > 0 ? '#378add88' : '#1a1a1a';
+    return `<div class="bar-row">
+      <span class="bar-lbl">${fmtDay(d)}</span>
+      <div class="bar-bg"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
+      <span class="bar-val">${ml >= 1000 ? (ml/1000).toFixed(1)+'L' : ml ? ml+'ml' : '—'}</span>
+    </div>`;
+  }).join('');
+}
+
+function toggleWaterHistory() {
+  const panel = document.getElementById('water-history-panel');
+  const btn = document.getElementById('water-history-btn');
+  const open = panel.style.maxHeight && panel.style.maxHeight !== '0px';
+  if (open) {
+    panel.style.maxHeight = '0px';
+    panel.style.opacity = '0';
+    btn.textContent = 'Show history';
+  } else {
+    panel.style.maxHeight = '300px';
+    panel.style.opacity = '1';
+    btn.textContent = 'Hide history';
+    renderWaterHistory();
   }
 }
 
@@ -1086,6 +1241,7 @@ function renderAll() {
 }
 
 loadData();
+checkDailyReset();
 handleSyncFromURL();
 renderAll();
 goToPage(0, false);
