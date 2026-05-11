@@ -302,6 +302,19 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
       <div class="card-title">Last import</div>
       <div id="last-import-detail" style="font-size:13px;color:#555">No data imported yet</div>
     </div>
+    <div class="card">
+      <div class="card-title">Transfer dashboard data</div>
+      <p style="font-size:13px;color:#888;margin-bottom:14px;line-height:1.6">Moving to a new URL or device? Export your data here and import it on the new one.</p>
+      <button class="btn-s" style="width:100%;margin-bottom:10px" onclick="exportDashboardData()">↓ Export my data</button>
+      <button class="log-btn" style="margin-top:0" onclick="showImportDataUI()">↑ Import from export</button>
+      <div id="import-data-ui" style="display:none;margin-top:12px">
+        <textarea class="fi" id="import-data-input" rows="4" placeholder="Paste your exported data here…" style="resize:none;font-size:13px;font-family:monospace;line-height:1.4"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn-c" style="flex:1" onclick="document.getElementById('import-data-ui').style.display='none'">Cancel</button>
+          <button class="btn-s" style="flex:1" onclick="importDashboardData()">Import</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   </div></div>
@@ -978,6 +991,82 @@ function handleSyncFromURL() {
   S.lastSync = now;
   saveData();
   window.history.replaceState({}, '', window.location.pathname);
+}
+
+// ── Dashboard data transfer ───────────────────────────────────────────────────
+
+function exportDashboardData() {
+  const dataStr = JSON.stringify(S, null, 2);
+  // Try native share sheet first (works great on iPhone)
+  if (navigator.share) {
+    navigator.share({
+      title: 'My Dashboard Data',
+      text: dataStr
+    }).catch(() => fallbackCopy(dataStr));
+  } else {
+    fallbackCopy(dataStr);
+  }
+}
+
+function fallbackCopy(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      toast('Data copied to clipboard ✓');
+    }).catch(() => promptManualCopy(text));
+  } else {
+    promptManualCopy(text);
+  }
+}
+
+function promptManualCopy(text) {
+  // Last resort — show in a textarea so user can manually copy
+  const ui = document.getElementById('import-data-ui');
+  const inp = document.getElementById('import-data-input');
+  inp.value = text;
+  ui.style.display = 'block';
+  inp.select();
+  toast('Select all and copy the text above');
+}
+
+function showImportDataUI() {
+  const ui = document.getElementById('import-data-ui');
+  const inp = document.getElementById('import-data-input');
+  inp.value = '';
+  ui.style.display = ui.style.display === 'none' ? 'block' : 'none';
+  if (ui.style.display === 'block') setTimeout(() => inp.focus(), 100);
+}
+
+function importDashboardData() {
+  const inp = document.getElementById('import-data-input');
+  const raw = inp.value.trim();
+  if (!raw) { toast('Paste your data first'); return; }
+  try {
+    const parsed = JSON.parse(raw);
+    // Validate it looks like dashboard data
+    if (!parsed.workouts && !parsed.sleep && !parsed.health && !parsed.todos) {
+      toast('Invalid data — paste the full export'); return;
+    }
+    // Merge carefully — keep existing data if imported field is missing
+    S = {
+      workouts: parsed.workouts || S.workouts,
+      sleep: parsed.sleep || S.sleep,
+      health: parsed.health || S.health,
+      todos: parsed.todos || S.todos,
+      water: parsed.water || S.water,
+      waterGoal: parsed.waterGoal || S.waterGoal,
+      lastSync: parsed.lastSync || S.lastSync,
+      sheetId: parsed.sheetId || S.sheetId
+    };
+    saveData();
+    renderAll();
+    updateCharts();
+    document.getElementById('import-data-ui').style.display = 'none';
+    inp.value = '';
+    haptic('medium');
+    toast('Data imported successfully ✓');
+  } catch(e) {
+    toast('Could not parse — check the data');
+  }
 }
 
 function renderAll() {
