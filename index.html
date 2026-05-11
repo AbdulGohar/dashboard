@@ -10,10 +10,10 @@
 <title>My Dashboard</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;background:#000;overscroll-behavior:none}
+html,body{height:100%;background:#000;overscroll-behavior:none;width:100%;overflow-x:hidden}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#fff;padding-bottom:0}
 
-.dash{min-height:100vh;padding:16px;padding-top:calc(env(safe-area-inset-top) + 16px);padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+.dash{min-height:100vh;padding:16px;padding-top:calc(env(safe-area-inset-top) + 16px);padding-bottom:calc(76px + env(safe-area-inset-bottom));width:100%;overflow-x:hidden}
 .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
 .header h1{font-size:20px;font-weight:600;color:#fff}
 .hdate{font-size:12px;color:#666}
@@ -25,9 +25,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#f
 .bnav-btn.active .bnav-icon{opacity:1}
 .bnav-btn.active .bnav-label{color:#fff;font-weight:500}
 
-.swipe-outer{overflow:hidden;width:100%}
-.swipe-track{display:flex;transition:transform .32s cubic-bezier(.4,0,.2,1);will-change:transform}
-.sec{min-width:100%;width:100%}
+.swipe-outer{overflow:hidden;width:100%;max-width:100vw}
+.swipe-track{display:flex;transition:transform .32s cubic-bezier(.4,0,.2,1);will-change:transform;width:100%}
+.sec{min-width:100vw;width:100vw;padding:0;box-sizing:border-box}
 
 .card{background:#161616;border-radius:16px;padding:16px;margin-bottom:12px;border:.5px solid #2a2a2a}
 .card-title{font-size:11px;color:#666;margin-bottom:12px;text-transform:uppercase;letter-spacing:.06em}
@@ -437,7 +437,7 @@ function goToPage(idx, animate) {
   curPage = idx;
   const track = document.getElementById('swipe-track');
   track.style.transition = animate === false ? 'none' : 'transform .32s cubic-bezier(.4,0,.2,1)';
-  track.style.transform = `translateX(-${curPage * 100}%)`;
+  track.style.transform = `translateX(calc(-${curPage * 100}vw))`;
   document.querySelectorAll('.bnav-btn').forEach((b,i) => b.classList.toggle('active', i === curPage));
   if (animate) haptic('light');
   setTimeout(() => updateCharts(), 60);
@@ -472,7 +472,7 @@ function sw(id, btn) {
     dx = mx;
     const track = document.getElementById('swipe-track');
     track.style.transition = 'none';
-    track.style.transform = `translateX(calc(-${curPage * 100}% + ${dx}px))`;
+    track.style.transform = `translateX(calc(-${curPage * 100}vw + ${dx}px))`;
   }, {passive:false});
 
   outer.addEventListener('touchend', () => {
