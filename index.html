@@ -131,6 +131,19 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
 .sync-dot{width:6px;height:6px;border-radius:50%;background:#333;flex-shrink:0}
 .sync-dot.live{background:#50c878;box-shadow:0 0 6px #50c87888}
 
+.due-chip{padding:5px 12px;border-radius:20px;font-size:12px;border:.5px solid #2a2a2a;background:#161616;color:#666;cursor:pointer;font-family:inherit;transition:all .15s;white-space:nowrap}
+.due-chip.active{background:#fff;color:#000;border-color:#fff;font-weight:500}
+
+.todo-section-label{font-size:10px;color:#444;text-transform:uppercase;letter-spacing:.08em;padding:10px 0 6px;border-top:.5px solid #1e1e1e;margin-top:4px}
+.todo-section-label:first-child{border-top:none;margin-top:0;padding-top:0}
+
+.overdue-dot{width:7px;height:7px;border-radius:50%;background:#f05050;flex-shrink:0;box-shadow:0 0 5px #f0505088}
+.due-label{font-size:10px;color:#555;margin-left:2px;white-space:nowrap}
+.due-label.today{color:#50c878}
+.due-label.overdue{color:#f05050}
+.due-label.tomorrow{color:#888}
+.due-label.week{color:#666}
+
 @keyframes countup{from{opacity:.4;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
 .num-pop{animation:countup .3s ease-out}
 
@@ -272,9 +285,17 @@ select.fi{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.o
   <div class="sec" id="todos">
     <div class="card">
       <div class="card-title">Tasks</div>
-      <div class="add-todo" style="margin-top:0;margin-bottom:12px">
-        <input class="fi" id="new-todo" placeholder="Add a task…" onkeydown="if(event.key==='Enter')addTodo()">
+      <!-- Add task row -->
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input class="fi" id="new-todo" placeholder="Add a task…" style="flex:1;font-size:15px" onkeydown="if(event.key==='Enter')addTodo()">
         <button class="add-btn" onclick="addTodo()">+</button>
+      </div>
+      <!-- Due date chips -->
+      <div style="display:flex;gap:6px;margin-bottom:14px" id="due-chips">
+        <button class="due-chip active" data-due="today" onclick="selectDue('today')">Today</button>
+        <button class="due-chip" data-due="tomorrow" onclick="selectDue('tomorrow')">Tomorrow</button>
+        <button class="due-chip" data-due="week" onclick="selectDue('week')">This week</button>
+        <button class="due-chip" data-due="none" onclick="selectDue('none')">No date</button>
       </div>
       <div id="todo-list"><div class="empty-state"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1.2" fill="white"/><circle cx="3" cy="12" r="1.2" fill="white"/><circle cx="3" cy="18" r="1.2" fill="white"/></svg><p>No tasks yet</p><small>Type above and hit + to add one</small></div></div>
     </div>
@@ -385,6 +406,7 @@ let activeM = null;
 let charts = {};
 let lastWaterAdd = 0;
 let undoTimer = null;
+let selectedDue = 'today';
 
 function haptic(style) {
   try {
@@ -586,11 +608,43 @@ function saveM() {
   setTimeout(() => updateCharts(), 60);
 }
 
+function selectDue(val) {
+  selectedDue = val;
+  document.querySelectorAll('.due-chip').forEach(c => c.classList.toggle('active', c.dataset.due === val));
+}
+
+function getDueDateKey(due) {
+  const d = new Date();
+  if (due === 'today') return d.toISOString().slice(0,10);
+  if (due === 'tomorrow') { d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); }
+  if (due === 'week') { d.setDate(d.getDate()+6); return d.toISOString().slice(0,10); }
+  return null;
+}
+
+function getDueStatus(dueDate) {
+  if (!dueDate) return 'none';
+  const today = todayKey();
+  if (dueDate < today) return 'overdue';
+  if (dueDate === today) return 'today';
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1);
+  if (dueDate === tomorrow.toISOString().slice(0,10)) return 'tomorrow';
+  return 'week';
+}
+
+function dueLabelText(status) {
+  if (status === 'today') return 'Today';
+  if (status === 'tomorrow') return 'Tomorrow';
+  if (status === 'week') return 'This week';
+  if (status === 'overdue') return 'Overdue';
+  return '';
+}
+
 function addTodo() {
   const inp = document.getElementById('new-todo');
   const txt = inp.value.trim();
   if (!txt) return;
-  const newTodo = {text:txt, done:false, id:Date.now()};
+  const dueDate = getDueDateKey(selectedDue);
+  const newTodo = {text:txt, done:false, id:Date.now(), dueDate};
   S.todos.unshift(newTodo); // add to top of open tasks
   inp.value = '';
   saveData();
@@ -670,25 +724,58 @@ function delTodo(id) {
 }
 
 function todoHTML(t) {
+  const status = getDueStatus(t.dueDate);
+  const overdue = !t.done && status === 'overdue';
+  const label = !t.done && status !== 'none' ? dueLabelText(status) : '';
   return `
     <div class="tck ${t.done?'done':''}" onclick="toggleTodo(${t.id})">
       ${t.done ? `<svg width="12" height="12" viewBox="0 0 12 12" style="display:block;margin:auto"><path d="M2 6.5L4.8 9L10 3.5" stroke="#000" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>` : ''}
     </div>
-    <span class="ttxt ${t.done?'done':''}">${t.text}</span>
+    <span class="ttxt ${t.done?'done':''}" style="flex:1">${t.text}</span>
+    ${overdue ? `<span class="overdue-dot"></span>` : ''}
+    ${label ? `<span class="due-label ${status}">${label}</span>` : ''}
     <span class="tdel" onclick="delTodo(${t.id})">×</span>`;
 }
 
 function renderTodos() {
   const el = document.getElementById('todo-list');
+  const open = S.todos.filter(t => !t.done);
+  const done = S.todos.filter(t => t.done);
+
   if (!S.todos.length) {
     el.innerHTML = '<div class="empty-state"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.5"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1.2" fill="white"/><circle cx="3" cy="12" r="1.2" fill="white"/><circle cx="3" cy="18" r="1.2" fill="white"/></svg><p>No tasks yet</p><small>Type above and hit + to add one</small></div>';
     return;
   }
-  const open = S.todos.filter(t => !t.done);
-  const done = S.todos.filter(t => t.done);
-  el.innerHTML = [...open, ...done].map(t =>
-    `<div class="ti" data-id="${t.id}">${todoHTML(t)}</div>`
-  ).join('');
+
+  // Sort open tasks: overdue first, then today, tomorrow, week, no date
+  const order = {overdue:0, today:1, tomorrow:2, week:3, none:4};
+  const sortedOpen = [...open].sort((a,b) => {
+    const sa = getDueStatus(a.dueDate), sb = getDueStatus(b.dueDate);
+    return (order[sa]??5) - (order[sb]??5);
+  });
+
+  // Group open by section
+  const todayTasks = sortedOpen.filter(t => getDueStatus(t.dueDate) === 'today' || getDueStatus(t.dueDate) === 'overdue');
+  const upcomingTasks = sortedOpen.filter(t => !['today','overdue'].includes(getDueStatus(t.dueDate)));
+
+  let html = '';
+
+  if (todayTasks.length) {
+    html += `<div class="todo-section-label">Today & overdue</div>`;
+    html += todayTasks.map(t => `<div class="ti" data-id="${t.id}">${todoHTML(t)}</div>`).join('');
+  }
+
+  if (upcomingTasks.length) {
+    html += `<div class="todo-section-label" style="margin-top:${todayTasks.length?'8px':'0'}">Upcoming</div>`;
+    html += upcomingTasks.map(t => `<div class="ti" data-id="${t.id}">${todoHTML(t)}</div>`).join('');
+  }
+
+  if (done.length) {
+    html += `<div class="todo-section-label" style="margin-top:8px">Completed</div>`;
+    html += done.map(t => `<div class="ti" data-id="${t.id}">${todoHTML(t)}</div>`).join('');
+  }
+
+  el.innerHTML = html;
 }
 
 function getStreakData() {
@@ -1146,6 +1233,16 @@ function handleSyncFromURL() {
   S.lastSync = now;
   saveData();
   window.history.replaceState({}, '', window.location.pathname);
+}
+
+function copyCommitMsg() {
+  const msg = document.getElementById('commit-msg').value.trim();
+  if (!msg) { toast('Write a commit message first'); return; }
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(msg).then(() => toast('Copied ✓')).catch(() => toast('Copy failed'));
+  } else {
+    toast('Copy failed — try manually');
+  }
 }
 
 // ── Dashboard data transfer ───────────────────────────────────────────────────
